@@ -1,12 +1,44 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from PIL import Image
-import io
 import base64
+import requests
 
-# Configuration
-st.set_page_config(page_title="Beauty Stock", page_icon="💅", layout="wide")
+# Configuration des Secrets
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+REPO_NAME = "votre_nom_utilisateur/votre_depot"
+FILE_PATH = "data.csv"
+BRANCH = "main"
+
+def get_github_file():
+    url = f"https://api.github.com/repos/{REPO_NAME}/contents/{FILE_PATH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200:
+        content = base64.b64decode(r.json()["content"]).decode("utf-8")
+        return pd.read_csv(pd.compat.StringIO(content)), r.json()["sha"]
+    return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), None
+
+def save_to_github(df, sha):
+    url = f"https://api.github.com/repos/{REPO_NAME}/contents/{FILE_PATH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    csv_content = df.to_csv(index=False)
+    encoded_content = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
+    
+    data = {
+        "message": "Mise à jour du stock beauté",
+        "content": encoded_content,
+        "branch": BRANCH,
+        "sha": sha
+    }
+    requests.put(url, json=data, headers=headers)
+
+# --- Logique de l'application ---
+st.title("💅 Ma Collection Beauté")
+df, file_sha = get_github_file()
+
+# (Le reste du code pour l'interface reste identique)
+# Lors de l'ajout d'un produit :
+# save_to_github(updated_df, file_sha)
 
 # Connexion au Google Sheet (via votre compte)
 conn = st.connection("gsheets", type=GSheetsConnection)
