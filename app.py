@@ -53,16 +53,58 @@ with st.sidebar:
         st.success("Enregistré !")
         st.rerun()
 
-# --- STYLE CSS POUR HARMONISER LES IMAGES ---
+# --- STYLE CSS POUR HARMONISER LES CARTES ET LES IMAGES ---
 st.markdown("""
     <style>
-    .fixed-image-container img {
-        height: 200px;
+    /* Force la taille des miniatures */
+    .miniature-container img {
+        height: 180px !important;
         object-fit: cover;
-        border-radius: 10px;
+        border-radius: 8px;
+    }
+    
+    /* Force la hauteur identique pour toutes les cartes du stock */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        min-height: 450px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
     </style>
     """, unsafe_allow_html=True)
+
+# --- AFFICHAGE ---
+tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
+for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
+    with tabs[i]:
+        view_df = df if t == "Tous" else df[df["Catégorie"] == t]
+        
+        cols = st.columns(3)
+        
+        for idx, (idx_row, row) in enumerate(view_df.iterrows()):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    # Affichage de la miniature
+                    if row["Photo"]:
+                        st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
+                        st.image(base64.b64decode(row["Photo"]), use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Agrandissement en taille normale
+                        with st.expander("🔍 Voir en grand"):
+                            # Ici, on n'utilise pas le container CSS pour laisser la taille normale
+                            st.image(base64.b64decode(row["Photo"]), use_container_width=False, caption=row["Nom"])
+                    
+                    # Informations du produit
+                    st.subheader(row["Nom"])
+                    st.write(f"**Catégorie :** {row['Catégorie']}")
+                    st.write(row["Description"])
+                    
+                    # Bouton supprimer en bas de carte
+                    if st.button("🗑️ Supprimer", key=f"del_{t}_{row['ID']}"):
+                        df = df[df["ID"] != row["ID"]]
+                        save_data(df, current_sha)
+                        st.rerun()
 
 # --- AFFICHAGE ---
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
