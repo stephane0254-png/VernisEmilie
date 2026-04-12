@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection  # <--- Cette ligne est cruciale
 import pandas as pd
 import base64
 import requests
