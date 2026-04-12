@@ -112,28 +112,32 @@ for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
         
-        # On crée une grille de 3 colonnes pour plus de lisibilité
         cols = st.columns(3)
         
-        for idx, (idx_row, row) in enumerate(view_df.iterrows()):
+        # On utilise enumerate pour obtenir 'idx' (position 0, 1, 2...) 
+        # et iterrows pour les données
+        for idx, (original_index, row) in enumerate(view_df.iterrows()):
             with cols[idx % 3]:
                 with st.container(border=True):
+                    # Affichage de la miniature
                     if row["Photo"]:
-                        # Affichage formaté (fixe)
-                        st.markdown('<div class="fixed-image-container">', unsafe_allow_html=True)
+                        st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
                         st.image(base64.b64decode(row["Photo"]), use_container_width=True)
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Bouton pour agrandir
-                        with st.expander("🔍 Voir en grand"):
-                            st.image(base64.b64decode(row["Photo"]), use_container_width=True)
+                        # Agrandissement (On sécurise aussi la clé de l'expander au cas où)
+                        with st.expander("🔍 Voir en grand", key=f"exp_{t}_{row['ID']}_{idx}"):
+                            st.image(base64.b64decode(row["Photo"]), use_container_width=False, caption=row["Nom"])
                     
+                    # Informations du produit
                     st.subheader(row["Nom"])
-                    st.caption(f"ID: {str(row['ID'])[:8]}") # Petit rappel de l'ID
+                    st.write(f"**Catégorie :** {row['Catégorie']}")
                     st.write(row["Description"])
                     
-                    # Bouton supprimer avec clé unique
-                    if st.button("🗑️ Supprimer", key=f"del_{t}_{row['ID']}"):
-                        df = df[df["ID"] != row["ID"]]
+                    # BOUTON SUPPRIMER : CLÉ TRIPLEMENT SÉCURISÉE
+                    # On combine : l'onglet (t), l'ID du produit, et l'index de la boucle (idx)
+                    if st.button("🗑️ Supprimer", key=f"btn_{t}_{row['ID']}_{idx}"):
+                        # On utilise l'index original du DataFrame pour être sûr de supprimer la bonne ligne
+                        df = df.drop(original_index)
                         save_data(df, current_sha)
                         st.rerun()
