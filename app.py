@@ -10,7 +10,7 @@ import random
 try:
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 except:
-    st.error("Le secret 'GITHUB_TOKEN' est manquant dans les Secrets.")
+    st.error("Le secret 'GITHUB_TOKEN' est manquant dans les Secrets de Streamlit.")
     st.stop()
 
 REPO = "stephane0254-png/VernisEmilie"
@@ -30,10 +30,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTIONS GITHUB (SANS CACHE) ---
+# --- FONCTIONS GITHUB ---
 def get_data():
-    # On ajoute un nombre aléatoire à l'URL pour forcer GitHub à donner la version la plus récente
-    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?cb={random.randint(1,1000)}"
+    # Cache-busting pour forcer la lecture de la version réelle sur GitHub
+    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?cb={random.randint(1,10000)}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
@@ -43,9 +43,19 @@ def get_data():
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             content = base64.b64decode(res.json()["content"]).decode("utf-8")
-            return pd.read_csv(StringIO(content)), res.json()["sha"]
+            # Nettoyage des lignes vides pour éviter les erreurs de lecture
+            if not content.strip():
+                return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), res.json()["sha"]
+            
+            df_load = pd.read_csv(StringIO(content))
+            # On s'assure que les colonnes sont bien là
+            for col in ["ID", "Catégorie", "Nom", "Description", "Photo"]:
+                if col not in df_load.columns:
+                    df_load[col] = ""
+            return df_load, res.json()["sha"]
         return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), None
-    except:
+    except Exception as e:
+        st.error(f"Erreur technique : {e}")
         return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), None
 
 def save_data(df, sha):
@@ -61,7 +71,7 @@ def save_data(df, sha):
     res = requests.put(url, json=payload, headers=headers)
     return res.status_code in [200, 201]
 
-# --- CHARGEMENT ---
+# --- CHARGEMENT INITIAL ---
 df, current_sha = get_data()
 
 # --- FORMULAIRE ---
@@ -82,22 +92,23 @@ with st.sidebar:
             new_id = str(pd.Timestamp.now().timestamp()).replace('.', '')
             new_line = pd.DataFrame([{"ID": new_id, "Catégorie": cat, "Nom": nom, "Description": desc, "Photo": img_str}])
             
-            # On récupère les données toutes fraîches juste avant d'ajouter
+            # On relit juste avant de sauver pour avoir le dernier SHA
             fresh_df, fresh_sha = get_data()
             updated_df = pd.concat([fresh_df, new_line], ignore_index=True)
             
             if save_data(updated_df, fresh_sha):
                 st.success("Enregistré !")
-                time.sleep(2) # On attend 2 secondes que GitHub digère
+                time.sleep(1.5)
                 st.rerun()
 
 # --- AFFICHAGE ---
 st.title("💅 Ma Collection Beauté")
 
+# Affichage du zoom si activé
 if st.session_state['zoomed_photo']:
     st.markdown('<div class="zoomed-container">', unsafe_allow_html=True)
     st.image(base64.b64decode(st.session_state['zoomed_photo']), use_container_width=False)
-    if st.button("❌ Fermer"):
+    if st.button("❌ Fermer le zoom"):
         st.session_state['zoomed_photo'] = None
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
@@ -105,15 +116,20 @@ if st.session_state['zoomed_photo']:
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
-        view_df = df if t == "Tous" else df[df["Catégorie"] == t]
+        # Filtrage
+        if t == "Tous":
+            view_df = df
+        else:
+            view_df = df[df["Catégorie"] == t]
+            
         if view_df.empty:
-            st.info("Aucun produit trouvé.")
+            st.info(f"Aucun produit dans la catégorie {t}.")
         else:
             cols = st.columns(4)
             for idx, (original_index, row) in enumerate(view_df.iterrows()):
                 with cols[idx % 4]:
                     with st.container(border=True):
-                        if str(row["Photo"]) != "nan" and row["Photo"] != "":
+                        if str(row["Photo"]) != "nan" and row["Photo"] != "" and row["Photo"] is not None:
                             st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
                             st.image(base64.b64decode(row["Photo"]), use_container_width=True)
                             st.markdown('</div>', unsafe_allow_html=True)
@@ -125,6 +141,7 @@ for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
                         st.write(row["Description"])
                         
                         if st.button("🗑️ Supprimer", key=f"b_{t}_{row['ID']}_{idx}"):
+                            # Suppression sécurisée
                             fresh_df, fresh_sha = get_data()
                             updated_df = fresh_df[fresh_df["ID"].astype(str) != str(row["ID"])]
                             if save_data(updated_df, fresh_sha):
