@@ -12,7 +12,7 @@ except:
     st.error("Le GITHUB_TOKEN est manquant dans les Secrets de Streamlit.")
     st.stop()
 
-REPO = "TON_PSEUDO/TON_DEPOT" # <--- VÉRIFIE BIEN CETTE LIGNE
+REPO = "stephane0254-png/VernisEmilie" # <--- VÉRIFIE BIEN CETTE LIGNE
 FILE_PATH = "data.csv"
 URL = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
 
