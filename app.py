@@ -18,21 +18,16 @@ FILE_PATH = "data.csv"
 
 st.set_page_config(page_title="Beauty Stock", page_icon="💅", layout="wide")
 
-# Initialisation des états
+# --- INITIALISATION DE LA MÉMOIRE VIVE (OPTIMISATION) ---
 if 'zoomed_photo' not in st.session_state:
     st.session_state['zoomed_photo'] = None
 if 'editing_product' not in st.session_state:
     st.session_state['editing_product'] = None
 
-# --- STYLE CSS (AVEC RÉDUCTION DU TITRE) ---
+# --- STYLE CSS ---
 st.markdown("""
     <style>
-    /* Réduction de la taille du titre principal */
-    h1 {
-        font-size: 28px !important;
-        padding-top: 0px !important;
-    }
-    
+    h1 { font-size: 28px !important; padding-top: 0px !important; }
     .miniature-container img { height: 180px !important; object-fit: cover; border-radius: 8px; }
     [data-testid="stVerticalBlockBorderWrapper"] { min-height: 520px; display: flex; flex-direction: column; justify-content: space-between; }
     .zoomed-container { text-align: center; margin-bottom: 20px; border: 2px solid #ff4b4b; border-radius: 15px; padding: 10px; background-color: #fff1f1; }
@@ -41,7 +36,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTIONS GITHUB ---
+# --- FONCTIONS GITHUB OPTIMISÉES ---
 def get_data():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?cb={random.randint(1,10000)}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
@@ -66,10 +61,21 @@ def save_data(df, sha):
     encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
     payload = {"message": "Mise à jour stock", "content": encoded, "sha": sha}
     res = requests.put(url, json=payload, headers=headers)
-    return res.status_code in [200, 201]
+    
+    # OPTIMISATION : On récupère le nouveau SHA directement après l'enregistrement
+    if res.status_code in [200, 201]:
+        return True, res.json()["content"]["sha"]
+    return False, None
 
-# --- CHARGEMENT ---
-df, current_sha = get_data()
+# --- CHARGEMENT UNIQUE (OPTIMISATION) ---
+# On ne télécharge depuis GitHub que si la mémoire est vide
+if 'stock_df' not in st.session_state:
+    with st.spinner("Chargement des données..."):
+        st.session_state['stock_df'], st.session_state['current_sha'] = get_data()
+
+# On utilise les données en mémoire
+df = st.session_state['stock_df']
+current_sha = st.session_state['current_sha']
 
 # --- FORMULAIRE D'AJOUT ---
 with st.sidebar:
@@ -83,23 +89,30 @@ with st.sidebar:
         
         if submit:
             if nom:
-                img_str = ""
-                if file:
-                    img_str = base64.b64encode(file.read()).decode()
-                
+                img_str = base64.b64encode(file.read()).decode() if file else ""
                 new_id = str(int(time.time()))
                 new_line = pd.DataFrame([{"ID": new_id, "Catégorie": cat, "Nom": nom, "Description": desc, "Photo": img_str}])
                 
-                f_df, f_sha = get_data()
-                updated_df = pd.concat([f_df, new_line], ignore_index=True)
+                # Mise à jour de la mémoire locale
+                updated_df = pd.concat([st.session_state['stock_df'], new_line], ignore_index=True)
                 
-                if save_data(updated_df, f_sha):
+                # Sauvegarde rapide (sans re-téléchargement)
+                success, new_sha = save_data(updated_df, st.session_state['current_sha'])
+                if success:
+                    st.session_state['stock_df'] = updated_df
+                    st.session_state['current_sha'] = new_sha
                     st.success("Produit ajouté !")
-                    time.sleep(1)
                     st.rerun()
 
 # --- INTERFACE PRINCIPALE ---
-st.title("💅 Ma Collection Beauté")
+col_titre, col_refresh = st.columns([5, 1])
+with col_titre:
+    st.title("💅 Ma Collection Beauté")
+with col_refresh:
+    if st.button("🔄 Rafraîchir"):
+        # Bouton manuel pour forcer la synchronisation avec GitHub si besoin
+        st.session_state['stock_df'], st.session_state['current_sha'] = get_data()
+        st.rerun()
 
 # 1. ZONE DE MODIFICATION
 if st.session_state['editing_product'] is not None:
@@ -115,23 +128,23 @@ if st.session_state['editing_product'] is not None:
         new_desc = st.text_area("Description", value=prod['Description'], key="edit_desc")
     
     with col_edit2:
-        new_file = st.file_uploader("Remplacer la photo (optionnel)", type=["jpg", "jpeg", "png"], key="edit_file")
+        new_file = st.file_uploader("Remplacer la photo", type=["jpg", "jpeg", "png"], key="edit_file")
         if not new_file and isinstance(prod['Photo'], str) and len(prod['Photo']) > 10:
             st.image(base64.b64decode(prod['Photo']), width=150)
     
     btn_save, btn_cancel = st.columns(2)
-    if btn_save.button("✅ Enregistrer les modifications", use_container_width=True):
-        f_df, f_sha = get_data()
-        final_photo = prod['Photo']
-        if new_file:
-            final_photo = base64.b64encode(new_file.read()).decode()
+    if btn_save.button("✅ Enregistrer", use_container_width=True):
+        updated_df = st.session_state['stock_df'].copy()
+        final_photo = base64.b64encode(new_file.read()).decode() if new_file else prod['Photo']
             
-        f_df.loc[f_df['ID'].astype(str) == str(prod['ID']), ['Catégorie', 'Nom', 'Description', 'Photo']] = [new_cat, new_nom, new_desc, final_photo]
+        updated_df.loc[updated_df['ID'].astype(str) == str(prod['ID']), ['Catégorie', 'Nom', 'Description', 'Photo']] = [new_cat, new_nom, new_desc, final_photo]
         
-        if save_data(f_df, f_sha):
+        success, new_sha = save_data(updated_df, st.session_state['current_sha'])
+        if success:
+            st.session_state['stock_df'] = updated_df
+            st.session_state['current_sha'] = new_sha
             st.session_state['editing_product'] = None
             st.success("Modifications enregistrées !")
-            time.sleep(1)
             st.rerun()
             
     if btn_cancel.button("❌ Annuler", use_container_width=True):
@@ -156,7 +169,7 @@ tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires", "🔍 Recherche"])
 
 def display_grid(data_to_show, tab_key):
     if data_to_show.empty:
-        st.info("Aucun produit ne correspond à votre sélection.")
+        st.info("Aucun produit ne correspond.")
     else:
         cols = st.columns(4)
         for idx, (original_index, row) in enumerate(data_to_show.iterrows()):
@@ -184,9 +197,11 @@ def display_grid(data_to_show, tab_key):
                         st.session_state['editing_product'] = row.to_dict()
                         st.rerun()
                     if col_act2.button("🗑️", key=f"del_{tab_key}_{row['ID']}"):
-                        f_df, f_sha = get_data()
-                        updated_df = f_df[f_df["ID"].astype(str) != str(row["ID"])]
-                        if save_data(updated_df, f_sha):
+                        updated_df = st.session_state['stock_df'][st.session_state['stock_df']["ID"].astype(str) != str(row["ID"])]
+                        success, new_sha = save_data(updated_df, st.session_state['current_sha'])
+                        if success:
+                            st.session_state['stock_df'] = updated_df
+                            st.session_state['current_sha'] = new_sha
                             st.rerun()
 
 # Remplissage des onglets
