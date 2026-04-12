@@ -51,7 +51,6 @@ def get_data():
 def save_data(df, sha):
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    # CORRECTION ICI : lineterminator au lieu de line_terminator
     csv_content = df.to_csv(index=False, lineterminator='\n', encoding='utf-8')
     encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
     payload = {"message": "Mise à jour stock", "content": encoded, "sha": sha}
@@ -73,31 +72,28 @@ with st.sidebar:
         
         if submit:
             if nom:
-                img_str = base64.b64encode(file.read()).decode() if file else ""
-                new_id = str(int(time.time()))
+                img_str = ""
+                if file:
+                    img_str = base64.b64encode(file.read()).decode()
                 
-                new_line = pd.DataFrame([{
-                    "ID": new_id, 
-                    "Catégorie": cat, 
-                    "Nom": nom, 
-                    "Description": desc, 
-                    "Photo": img_str
-                }])
+                new_id = str(int(time.time()))
+                new_line = pd.DataFrame([{"ID": new_id, "Catégorie": cat, "Nom": nom, "Description": desc, "Photo": img_str}])
                 
                 f_df, f_sha = get_data()
                 updated_df = pd.concat([f_df, new_line], ignore_index=True)
                 
                 if save_data(updated_df, f_sha):
                     st.success("Produit ajouté !")
-                    time.sleep(1.5)
+                    time.sleep(1)
                     st.rerun()
-            else:
-                st.error("Le nom est obligatoire")
 
 # --- AFFICHAGE ZOOM ---
 if st.session_state['zoomed_photo']:
     st.markdown('<div class="zoomed-container">', unsafe_allow_html=True)
-    st.image(base64.b64decode(st.session_state['zoomed_photo']), use_container_width=False)
+    try:
+        st.image(base64.b64decode(st.session_state['zoomed_photo']), use_container_width=False)
+    except:
+        st.error("Impossible d'afficher cette image.")
     if st.button("❌ Fermer le zoom"):
         st.session_state['zoomed_photo'] = None
         st.rerun()
@@ -118,13 +114,22 @@ for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
             for idx, (original_index, row) in enumerate(view_df.iterrows()):
                 with cols[idx % 4]:
                     with st.container(border=True):
-                        if row["Photo"]:
-                            st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
-                            st.image(base64.b64decode(row["Photo"]), use_container_width=True)
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            if st.button("🔍 Zoom", key=f"z_{t}_{idx}"):
-                                st.session_state['zoomed_photo'] = row["Photo"]
-                                st.rerun()
+                        # VÉRIFICATION DE LA PHOTO AVANT DÉCODAGE
+                        photo_data = row.get("Photo")
+                        has_photo = isinstance(photo_data, str) and len(photo_data) > 10
+                        
+                        if has_photo:
+                            try:
+                                st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
+                                st.image(base64.b64decode(photo_data), use_container_width=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
+                                if st.button("🔍 Zoom", key=f"z_{t}_{idx}"):
+                                    st.session_state['zoomed_photo'] = photo_data
+                                    st.rerun()
+                            except:
+                                st.warning("Image corrompue")
+                        else:
+                            st.info("📷 Pas de photo")
                         
                         st.subheader(row["Nom"])
                         st.write(row["Description"])
