@@ -6,7 +6,7 @@ from io import StringIO
 
 # --- CONFIGURATION GITHUB ---
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-REPO = "votre_nom_utilisateur/votre_depot" # À MODIFIER
+REPO = "stephane0254-png/VernisEmilie"
 FILE_PATH = "data.csv"
 URL = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
 
