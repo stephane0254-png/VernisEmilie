@@ -32,7 +32,6 @@ st.markdown("""
 
 # --- FONCTIONS GITHUB ---
 def get_data():
-    # Cache-busting pour éviter de lire une vieille version
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?cb={random.randint(1,10000)}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     try:
@@ -42,7 +41,6 @@ def get_data():
             if not content.strip() or len(content.split('\n')) <= 1:
                 return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), res.json()["sha"]
             
-            # Lecture robuste du CSV
             df_load = pd.read_csv(StringIO(content), sep=',', skipinitialspace=True)
             df_load.columns = df_load.columns.str.strip()
             return df_load, res.json()["sha"]
@@ -53,7 +51,8 @@ def get_data():
 def save_data(df, sha):
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    csv_content = df.to_csv(index=False, line_terminator='\n', encoding='utf-8')
+    # CORRECTION ICI : lineterminator au lieu de line_terminator
+    csv_content = df.to_csv(index=False, lineterminator='\n', encoding='utf-8')
     encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
     payload = {"message": "Mise à jour stock", "content": encoded, "sha": sha}
     res = requests.put(url, json=payload, headers=headers)
@@ -92,6 +91,8 @@ with st.sidebar:
                     st.success("Produit ajouté !")
                     time.sleep(1.5)
                     st.rerun()
+            else:
+                st.error("Le nom est obligatoire")
 
 # --- AFFICHAGE ZOOM ---
 if st.session_state['zoomed_photo']:
@@ -130,7 +131,6 @@ for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
                         
                         if st.button("🗑️", key=f"b_{t}_{idx}"):
                             f_df, f_sha = get_data()
-                            # On supprime par ID pour être sûr
                             updated_df = f_df[f_df["ID"].astype(str) != str(row["ID"])]
                             save_data(updated_df, f_sha)
                             st.rerun()
