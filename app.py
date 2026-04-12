@@ -1,4 +1,5 @@
 import streamlit as st
+import pd as pd
 import pandas as pd
 import base64
 import requests
@@ -7,12 +8,7 @@ import time
 import random
 
 # --- CONFIGURATION GITHUB ---
-try:
-    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-except:
-    st.error("Secret 'GITHUB_TOKEN' manquant.")
-    st.stop()
-
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 REPO = "stephane0254-png/VernisEmilie"
 FILE_PATH = "data.csv"
 
@@ -29,44 +25,31 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTION DE LECTURE ROBUSTE ---
+# --- FONCTION DE LECTURE ---
 def get_data():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?cb={random.randint(1,10000)}"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-        "Cache-Control": "no-cache"
-    }
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     try:
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             content = base64.b64decode(res.json()["content"]).decode("utf-8")
-            
-            # DIAGNOSTIC : On affiche le contenu brut si l'app est vide (à retirer plus tard)
-            if not content.strip():
+            if not content.strip() or len(content.split('\n')) <= 1:
                 return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), res.json()["sha"]
             
-            # Tentative de lecture flexible (gère virgules ou points-virgules)
-            try:
-                df_load = pd.read_csv(StringIO(content), sep=None, engine='python')
-            except:
-                df_load = pd.read_csv(StringIO(content))
-
-            # Nettoyage des noms de colonnes (enlève les espaces invisibles)
+            df_load = pd.read_csv(StringIO(content), sep=',', skipinitialspace=True)
             df_load.columns = df_load.columns.str.strip()
-            
             return df_load, res.json()["sha"]
         return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), None
-    except Exception as e:
-        st.error(f"Erreur technique : {e}")
+    except:
         return pd.DataFrame(columns=["ID", "Catégorie", "Nom", "Description", "Photo"]), None
 
 def save_data(df, sha):
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    csv_content = df.to_csv(index=False)
+    # On force le formatage propre du CSV
+    csv_content = df.to_csv(index=False, line_terminator='\n', encoding='utf-8')
     encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
-    payload = {"message": "Update", "content": encoded, "sha": sha}
+    payload = {"message": "Update Stock", "content": encoded, "sha": sha}
     res = requests.put(url, json=payload, headers=headers)
     return res.status_code in [200, 201]
 
@@ -76,67 +59,73 @@ df, current_sha = get_data()
 # --- INTERFACE ---
 st.title("💅 Ma Collection Beauté")
 
-# PETIT TABLEAU DE BORD DE DEBUG (À supprimer quand ça marche)
-with st.expander("🛠️ Diagnostic Technique (Si rien ne s'affiche)"):
-    st.write(f"Nombre de lignes détectées : {len(df)}")
-    st.write("Colonnes trouvées :", list(df.columns))
-    st.dataframe(df.head())
-
-# --- FORMULAIRE ---
+# --- FORMULAIRE D'AJOUT ---
 with st.sidebar:
-    st.header("✨ Ajouter")
+    st.header("✨ Ajouter un article")
     with st.form("form_ajout", clear_on_submit=True):
         cat = st.selectbox("Catégorie", ["Vernis", "Soins", "Accessoires"])
-        nom = st.text_input("Nom")
+        nom = st.text_input("Nom du produit")
         desc = st.text_area("Description")
         file = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
-        if st.form_submit_button("Enregistrer"):
+        submit = st.form_submit_button("🚀 ENREGISTRER")
+        
+        if submit:
             if nom:
                 img_str = base64.b64encode(file.read()).decode() if file else ""
                 new_id = str(int(time.time()))
-                new_line = pd.DataFrame([{"ID": new_id, "Catégorie": cat, "Nom": nom, "Description": desc, "Photo": img_str}])
                 
+                # Création de la nouvelle ligne
+                new_data = {
+                    "ID": [new_id],
+                    "Catégorie": [cat],
+                    "Nom": [nom],
+                    "Description": [desc],
+                    "Photo": [img_str]
+                }
+                new_line_df = pd.DataFrame(new_data)
+                
+                # Récupération fraîche et concaténation
                 f_df, f_sha = get_data()
-                updated_df = pd.concat([f_df, new_line], ignore_index=True)
+                updated_df = pd.concat([f_df, new_line_df], ignore_index=True)
+                
                 if save_data(updated_df, f_sha):
-                    st.success("Ok !")
-                    time.sleep(1)
+                    st.success("Produit bien ajouté !")
+                    time.sleep(2)
                     st.rerun()
+            else:
+                st.error("Le nom est obligatoire")
 
-# --- AFFICHAGE ---
+# --- ZOOM ---
 if st.session_state['zoomed_photo']:
-    st.image(base64.b64decode(st.session_state['zoomed_photo']))
-    if st.button("Fermer"):
+    st.image(base64.b64decode(st.session_state['zoomed_photo']), use_container_width=False)
+    if st.button("Fermer le zoom"):
         st.session_state['zoomed_photo'] = None
         st.rerun()
 
+# --- AFFICHAGE ---
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
-categories = ["Tous", "Vernis", "Soins", "Accessoires"]
-
-for i, t in enumerate(categories):
+for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
-        # Filtrage insensible à la casse pour plus de sécurité
-        if t == "Tous":
-            view_df = df
-        else:
-            view_df = df[df["Catégorie"].str.contains(t, case=False, na=False)]
-            
+        view_df = df if t == "Tous" else df[df["Catégorie"] == t]
+        
         if view_df.empty:
-            st.info(f"Aucun produit dans {t}")
+            st.info(f"Aucun produit dans la catégorie {t}")
         else:
             cols = st.columns(4)
             for idx, (original_index, row) in enumerate(view_df.iterrows()):
                 with cols[idx % 4]:
                     with st.container(border=True):
-                        if row.get("Photo"):
+                        if row["Photo"]:
                             st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
                             st.image(base64.b64decode(row["Photo"]), use_container_width=True)
                             st.markdown('</div>', unsafe_allow_html=True)
                             if st.button("🔍 Zoom", key=f"z_{t}_{idx}"):
                                 st.session_state['zoomed_photo'] = row["Photo"]
                                 st.rerun()
+                        
                         st.subheader(row["Nom"])
                         st.write(row["Description"])
+                        
                         if st.button("🗑️", key=f"b_{t}_{idx}"):
                             f_df, f_sha = get_data()
                             updated_df = f_df.drop(original_index)
