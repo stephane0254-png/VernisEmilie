@@ -59,14 +59,19 @@ for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
         cols = st.columns(2)
-        for idx, row in view_df.iterrows():
+        
+        # On utilise une boucle avec index pour la mise en page
+        for idx, (idx_row, row) in enumerate(view_df.iterrows()):
             with cols[idx % 2]:
                 with st.container(border=True):
                     if row["Photo"]:
                         st.image(base64.b64decode(row["Photo"]))
                     st.subheader(row["Nom"])
                     st.write(row["Description"])
-                    if st.button("Supprimer", key=row["ID"]):
+                    
+                    # LA CORRECTION EST ICI : 
+                    # On ajoute 't' (le nom de l'onglet) dans la key pour qu'elle soit unique
+                    if st.button("Supprimer", key=f"del_{t}_{row['ID']}"):
                         df = df[df["ID"] != row["ID"]]
                         save_data(df, current_sha)
                         st.rerun()
