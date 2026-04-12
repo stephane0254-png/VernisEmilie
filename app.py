@@ -31,6 +31,7 @@ st.markdown("""
     [data-testid="stVerticalBlockBorderWrapper"] { min-height: 520px; display: flex; flex-direction: column; justify-content: space-between; }
     .zoomed-container { text-align: center; margin-bottom: 20px; border: 2px solid #ff4b4b; border-radius: 15px; padding: 10px; background-color: #fff1f1; }
     .edit-container { background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-bottom: 20px; }
+    .search-box { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #ddd; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -94,14 +95,13 @@ with st.sidebar:
 # --- INTERFACE PRINCIPALE ---
 st.title("💅 Ma Collection Beauté")
 
-# 1. ZONE DE MODIFICATION (S'affiche si un produit est sélectionné)
+# 1. ZONE DE MODIFICATION
 if st.session_state['editing_product'] is not None:
     prod = st.session_state['editing_product']
     st.markdown('<div class="edit-container">', unsafe_allow_html=True)
     st.subheader(f"📝 Modifier : {prod['Nom']}")
     
     col_edit1, col_edit2 = st.columns([2, 1])
-    
     with col_edit1:
         new_cat = st.selectbox("Catégorie", ["Vernis", "Soins", "Accessoires"], 
                                index=["Vernis", "Soins", "Accessoires"].index(prod['Catégorie']), key="edit_cat")
@@ -116,13 +116,10 @@ if st.session_state['editing_product'] is not None:
     btn_save, btn_cancel = st.columns(2)
     if btn_save.button("✅ Enregistrer les modifications", use_container_width=True):
         f_df, f_sha = get_data()
-        
-        # Préparation de l'image
         final_photo = prod['Photo']
         if new_file:
             final_photo = base64.b64encode(new_file.read()).decode()
             
-        # Mise à jour de la ligne correspondante
         f_df.loc[f_df['ID'].astype(str) == str(prod['ID']), ['Catégorie', 'Nom', 'Description', 'Photo']] = [new_cat, new_nom, new_desc, final_photo]
         
         if save_data(f_df, f_sha):
@@ -148,47 +145,66 @@ if st.session_state['zoomed_photo']:
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 3. GRILLE DE PRODUITS
-tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
+# 3. ONGLETS ET RECHERCHE
+tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires", "🔍 Recherche"])
 
+# Fonction d'affichage commune
+def display_grid(data_to_show, tab_key):
+    if data_to_show.empty:
+        st.info("Aucun produit ne correspond à votre sélection.")
+    else:
+        cols = st.columns(4)
+        for idx, (original_index, row) in enumerate(data_to_show.iterrows()):
+            with cols[idx % 4]:
+                with st.container(border=True):
+                    photo_data = row.get("Photo")
+                    has_photo = isinstance(photo_data, str) and len(photo_data) > 10
+                    
+                    if has_photo:
+                        st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
+                        st.image(base64.b64decode(photo_data), use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        if st.button("🔍 Zoom", key=f"z_{tab_key}_{row['ID']}"):
+                            st.session_state['zoomed_photo'] = photo_data
+                            st.rerun()
+                    else:
+                        st.info("📷 Pas de photo")
+                    
+                    st.subheader(row["Nom"])
+                    st.caption(f"Catégorie: {row['Catégorie']}")
+                    st.write(row["Description"])
+                    
+                    col_act1, col_act2 = st.columns(2)
+                    if col_act1.button("📝 Modifier", key=f"ed_{tab_key}_{row['ID']}"):
+                        st.session_state['editing_product'] = row.to_dict()
+                        st.rerun()
+                    if col_act2.button("🗑️", key=f"del_{tab_key}_{row['ID']}"):
+                        f_df, f_sha = get_data()
+                        updated_df = f_df[f_df["ID"].astype(str) != str(row["ID"])]
+                        if save_data(updated_df, f_sha):
+                            st.rerun()
+
+# Remplissage des onglets standards
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
-        
-        if view_df.empty:
-            st.info(f"Aucun produit trouvé dans '{t}'")
-        else:
-            cols = st.columns(4)
-            for idx, (original_index, row) in enumerate(view_df.iterrows()):
-                with cols[idx % 4]:
-                    with st.container(border=True):
-                        # Photo
-                        photo_data = row.get("Photo")
-                        has_photo = isinstance(photo_data, str) and len(photo_data) > 10
-                        
-                        if has_photo:
-                            st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
-                            st.image(base64.b64decode(photo_data), use_container_width=True)
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            if st.button("🔍 Zoom", key=f"z_{t}_{row['ID']}"):
-                                st.session_state['zoomed_photo'] = photo_data
-                                st.rerun()
-                        else:
-                            st.info("📷 Pas de photo")
-                        
-                        # Infos
-                        st.subheader(row["Nom"])
-                        st.write(row["Description"])
-                        
-                        # Actions (Modifier / Supprimer)
-                        col_act1, col_act2 = st.columns(2)
-                        
-                        if col_act1.button("📝 Modifier", key=f"ed_{t}_{row['ID']}"):
-                            st.session_state['editing_product'] = row.to_dict()
-                            st.rerun()
-                            
-                        if col_act2.button("🗑️", key=f"del_{t}_{row['ID']}"):
-                            f_df, f_sha = get_data()
-                            updated_df = f_df[f_df["ID"].astype(str) != str(row["ID"])]
-                            if save_data(updated_df, f_sha):
-                                st.rerun()
+        display_grid(view_df, t)
+
+# Logique de l'onglet RECHERCHE
+with tabs[4]:
+    st.markdown('<div class="search-box">', unsafe_allow_html=True)
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        search_name = st.text_input("Rechercher par nom", placeholder="Ex: Vernis Rouge...")
+    with col_s2:
+        search_cat = st.multiselect("Filtrer par catégorie", ["Vernis", "Soins", "Accessoires"])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Filtrage dynamique
+    search_df = df.copy()
+    if search_name:
+        search_df = search_df[search_df['Nom'].str.contains(search_name, case=False, na=False)]
+    if search_cat:
+        search_df = search_df[search_df['Catégorie'].isin(search_cat)]
+
+    display_grid(search_df, "search")
