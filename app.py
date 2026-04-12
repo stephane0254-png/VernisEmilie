@@ -24,9 +24,15 @@ if 'zoomed_photo' not in st.session_state:
 if 'editing_product' not in st.session_state:
     st.session_state['editing_product'] = None
 
-# --- STYLE CSS ---
+# --- STYLE CSS (AVEC RÉDUCTION DU TITRE) ---
 st.markdown("""
     <style>
+    /* Réduction de la taille du titre principal */
+    h1 {
+        font-size: 28px !important;
+        padding-top: 0px !important;
+    }
+    
     .miniature-container img { height: 180px !important; object-fit: cover; border-radius: 8px; }
     [data-testid="stVerticalBlockBorderWrapper"] { min-height: 520px; display: flex; flex-direction: column; justify-content: space-between; }
     .zoomed-container { text-align: center; margin-bottom: 20px; border: 2px solid #ff4b4b; border-radius: 15px; padding: 10px; background-color: #fff1f1; }
@@ -65,7 +71,7 @@ def save_data(df, sha):
 # --- CHARGEMENT ---
 df, current_sha = get_data()
 
-# --- FORMULAIRE D'AJOUT (Barre latérale) ---
+# --- FORMULAIRE D'AJOUT ---
 with st.sidebar:
     st.header("✨ Ajouter un article")
     with st.form("form_ajout", clear_on_submit=True):
@@ -148,7 +154,6 @@ if st.session_state['zoomed_photo']:
 # 3. ONGLETS ET RECHERCHE
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires", "🔍 Recherche"])
 
-# Fonction d'affichage commune
 def display_grid(data_to_show, tab_key):
     if data_to_show.empty:
         st.info("Aucun produit ne correspond à votre sélection.")
@@ -184,7 +189,7 @@ def display_grid(data_to_show, tab_key):
                         if save_data(updated_df, f_sha):
                             st.rerun()
 
-# Remplissage des onglets standards
+# Remplissage des onglets
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
@@ -200,7 +205,6 @@ with tabs[4]:
         search_cat = st.multiselect("Filtrer par catégorie", ["Vernis", "Soins", "Accessoires"])
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Filtrage dynamique
     search_df = df.copy()
     if search_name:
         search_df = search_df[search_df['Nom'].str.contains(search_name, case=False, na=False)]
