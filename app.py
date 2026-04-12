@@ -53,25 +53,45 @@ with st.sidebar:
         st.success("Enregistré !")
         st.rerun()
 
+# --- STYLE CSS POUR HARMONISER LES IMAGES ---
+st.markdown("""
+    <style>
+    .fixed-image-container img {
+        height: 200px;
+        object-fit: cover;
+        border-radius: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- AFFICHAGE ---
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires"])
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
-        cols = st.columns(2)
         
-        # On utilise une boucle avec index pour la mise en page
+        # On crée une grille de 3 colonnes pour plus de lisibilité
+        cols = st.columns(3)
+        
         for idx, (idx_row, row) in enumerate(view_df.iterrows()):
-            with cols[idx % 2]:
+            with cols[idx % 3]:
                 with st.container(border=True):
                     if row["Photo"]:
-                        st.image(base64.b64decode(row["Photo"]))
+                        # Affichage formaté (fixe)
+                        st.markdown('<div class="fixed-image-container">', unsafe_allow_html=True)
+                        st.image(base64.b64decode(row["Photo"]), use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Bouton pour agrandir
+                        with st.expander("🔍 Voir en grand"):
+                            st.image(base64.b64decode(row["Photo"]), use_container_width=True)
+                    
                     st.subheader(row["Nom"])
+                    st.caption(f"ID: {str(row['ID'])[:8]}") # Petit rappel de l'ID
                     st.write(row["Description"])
                     
-                    # LA CORRECTION EST ICI : 
-                    # On ajoute 't' (le nom de l'onglet) dans la key pour qu'elle soit unique
-                    if st.button("Supprimer", key=f"del_{t}_{row['ID']}"):
+                    # Bouton supprimer avec clé unique
+                    if st.button("🗑️ Supprimer", key=f"del_{t}_{row['ID']}"):
                         df = df[df["ID"] != row["ID"]]
                         save_data(df, current_sha)
                         st.rerun()
