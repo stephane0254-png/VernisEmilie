@@ -38,7 +38,6 @@ st.markdown("""
 # --- FONCTIONS GITHUB SÉCURISÉES ---
 def get_data():
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    # Utilisation des en-têtes officiels pour contourner le cache de GitHub
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}", 
         "Accept": "application/vnd.github.v3+json",
@@ -85,7 +84,7 @@ if 'stock_df' not in st.session_state:
         loaded_df, loaded_sha, err = get_data()
         if err:
             st.error(err)
-            st.stop() # On stoppe tout proprement si GitHub est en panne
+            st.stop()
         else:
             st.session_state['stock_df'] = loaded_df
             st.session_state['current_sha'] = loaded_sha
@@ -94,19 +93,24 @@ if 'stock_df' not in st.session_state:
 df = st.session_state['stock_df']
 
 # --- INTERFACE PRINCIPALE (EN TÊTE) ---
-col_titre, col_refresh = st.columns([5, 1])
+col_titre, col_refresh, col_sort = st.columns([4, 1, 1])
 with col_titre:
     st.title("💅 Ma Collection Beauté")
 with col_refresh:
     if st.button("🔄 Rafraîchir"):
-        with st.spinner("Recherche de mises à jour..."):
+        with st.spinner("Mise à jour..."):
             loaded_df, loaded_sha, err = get_data()
-            if err:
-                st.error(f"Échec du rafraîchissement : {err}")
-            else:
+            if not err:
                 st.session_state['stock_df'] = loaded_df
                 st.session_state['current_sha'] = loaded_sha
                 st.rerun()
+with col_sort:
+    sort_order = st.selectbox("Tri Nom", ["A-Z", "Z-A"], label_visibility="collapsed")
+
+# Application du tri
+if not df.empty:
+    ascending = True if sort_order == "A-Z" else False
+    df = df.sort_values(by="Nom", ascending=ascending, key=lambda col: col.str.lower())
 
 # --- FORMULAIRE D'AJOUT ---
 with st.sidebar:
@@ -132,7 +136,7 @@ with st.sidebar:
                     st.success("Produit ajouté !")
                     st.rerun()
                 else:
-                    st.error("Erreur d'enregistrement sur GitHub.")
+                    st.error("Erreur d'enregistrement.")
             else:
                 st.error("Le nom est obligatoire.")
 
@@ -158,7 +162,6 @@ if st.session_state['editing_product'] is not None:
     if btn_save.button("✅ Enregistrer", use_container_width=True):
         updated_df = st.session_state['stock_df'].copy()
         final_photo = base64.b64encode(new_file.read()).decode() if new_file else prod['Photo']
-            
         updated_df.loc[updated_df['ID'].astype(str) == str(prod['ID']), ['Catégorie', 'Nom', 'Description', 'Photo']] = [new_cat, new_nom, new_desc, final_photo]
         
         success, new_sha = save_data(updated_df, st.session_state['current_sha'])
@@ -166,10 +169,7 @@ if st.session_state['editing_product'] is not None:
             st.session_state['stock_df'] = updated_df
             st.session_state['current_sha'] = new_sha
             st.session_state['editing_product'] = None
-            st.success("Modifications enregistrées !")
             st.rerun()
-        else:
-            st.error("Erreur lors de la mise à jour.")
             
     if btn_cancel.button("❌ Annuler", use_container_width=True):
         st.session_state['editing_product'] = None
@@ -180,7 +180,7 @@ if st.session_state['editing_product'] is not None:
 if st.session_state['zoomed_photo']:
     st.markdown('<div class="zoomed-container">', unsafe_allow_html=True)
     try:
-        st.image(base64.b64decode(st.session_state['zoomed_photo']), use_container_width=False)
+        st.image(base64.b64decode(st.session_state['zoomed_photo']))
     except:
         st.error("Image illisible")
     if st.button("❌ Fermer le zoom"):
@@ -188,7 +188,7 @@ if st.session_state['zoomed_photo']:
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 3. ONGLETS ET RECHERCHE
+# 3. ONGLETS ET AFFICHAGE
 tabs = st.tabs(["Tous", "Vernis", "Soins", "Accessoires", "🔍 Recherche"])
 
 def display_grid(data_to_show, tab_key):
@@ -201,7 +201,6 @@ def display_grid(data_to_show, tab_key):
                 with st.container(border=True):
                     photo_data = row.get("Photo")
                     has_photo = isinstance(photo_data, str) and len(photo_data) > 10
-                    
                     if has_photo:
                         st.markdown('<div class="miniature-container">', unsafe_allow_html=True)
                         st.image(base64.b64decode(photo_data), use_container_width=True)
@@ -227,10 +226,8 @@ def display_grid(data_to_show, tab_key):
                             st.session_state['stock_df'] = updated_df
                             st.session_state['current_sha'] = new_sha
                             st.rerun()
-                        else:
-                            st.error("Erreur de suppression.")
 
-# Remplissage des onglets
+# Remplissage des onglets thématiques
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
         view_df = df if t == "Tous" else df[df["Catégorie"] == t]
@@ -248,7 +245,6 @@ with tabs[4]:
 
     search_df = df.copy()
     if search_query:
-        # Recherche combinée dans Nom ET Description
         search_df = search_df[
             search_df['Nom'].str.contains(search_query, case=False, na=False) | 
             search_df['Description'].str.contains(search_query, case=False, na=False)
