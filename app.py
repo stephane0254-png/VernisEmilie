@@ -102,7 +102,6 @@ with col_refresh:
         with st.spinner("Recherche de mises à jour..."):
             loaded_df, loaded_sha, err = get_data()
             if err:
-                # Si le rafraichissement plante, on garde les vieilles données et on affiche une erreur
                 st.error(f"Échec du rafraîchissement : {err}")
             else:
                 st.session_state['stock_df'] = loaded_df
@@ -242,14 +241,18 @@ with tabs[4]:
     st.markdown('<div class="search-box">', unsafe_allow_html=True)
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        search_name = st.text_input("Rechercher par nom", placeholder="Ex: Vernis Rouge...")
+        search_query = st.text_input("Rechercher (nom ou description)", placeholder="Ex: Vernis Rouge...")
     with col_s2:
         search_cat = st.multiselect("Filtrer par catégorie", ["Vernis", "Soins", "Accessoires"])
     st.markdown('</div>', unsafe_allow_html=True)
 
     search_df = df.copy()
-    if search_name:
-        search_df = search_df[search_df['Nom'].str.contains(search_name, case=False, na=False)]
+    if search_query:
+        # Recherche combinée dans Nom ET Description
+        search_df = search_df[
+            search_df['Nom'].str.contains(search_query, case=False, na=False) | 
+            search_df['Description'].str.contains(search_query, case=False, na=False)
+        ]
     if search_cat:
         search_df = search_df[search_df['Catégorie'].isin(search_cat)]
 
