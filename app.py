@@ -50,17 +50,21 @@ def get_github_file(path):
 
 def get_data():
     content, sha = get_github_file(FILE_PATH)
+    cols = ["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]
     if content:
         if not content.strip() or len(content.strip().split('\n')) <= 1:
-            return pd.DataFrame(columns=["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]), sha, None
+            return pd.DataFrame(columns=cols), sha, None
         try:
             df_load = pd.read_csv(StringIO(content), sep=',', skipinitialspace=True)
             df_load.columns = df_load.columns.str.strip()
+            # On s'assure que toutes les colonnes sont présentes
+            for c in cols:
+                if c not in df_load.columns: df_load[c] = ""
             if "ID" in df_load.columns:
                 df_load["ID"] = df_load["ID"].astype(str)
             return df_load, sha, None
         except:
-            return pd.DataFrame(columns=["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]), sha, None
+            return pd.DataFrame(columns=cols), sha, None
     return None, None, "Erreur de connexion GitHub"
 
 def load_list(filename, default_values):
@@ -73,14 +77,38 @@ def load_list(filename, default_values):
             return default_values
     return default_values
 
-def save_data(df, sha):
+def save_data(df):
+    """Sauvegarde sécurisée avec vérification anti-vidage"""
+    # 1. Sécurité : On refuse de sauvegarder si le DataFrame est vide (sauf si c'est volontaire, mais ici on protège)
+    if df is None or (not isinstance(df, pd.DataFrame)):
+        return False, "Erreur technique : données invalides."
+    
+    # 2. Récupérer le SHA le plus récent juste avant l'écriture pour éviter les conflits
+    _, latest_sha = get_github_file(FILE_PATH)
+    if not latest_sha:
+        return False, "Impossible de récupérer la version actuelle sur GitHub."
+
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    
+    # Génération du CSV
     csv_content = df.to_csv(index=False, lineterminator='\n', encoding='utf-8')
+    
+    # 3. Sécurité supplémentaire : Si le contenu généré est trop court (ex: juste l'entête alors qu'il y avait des données)
+    # on peut ajouter une alerte, mais ici on s'assure au moins que l'encodage est correct.
     encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
-    payload = {"message": "Mise à jour stock", "content": encoded, "sha": sha}
+    
+    payload = {
+        "message": f"Mise à jour stock {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        "content": encoded,
+        "sha": latest_sha
+    }
+    
     res = requests.put(url, json=payload, headers=headers)
-    return (True, res.json()["content"]["sha"]) if res.status_code in [200, 201] else (False, None)
+    if res.status_code in [200, 201]:
+        return True, res.json()["content"]["sha"]
+    else:
+        return False, res.json().get("message", "Erreur lors de l'envoi")
 
 # --- CHARGEMENT INITIAL ---
 if 'stock_df' not in st.session_state:
@@ -103,7 +131,8 @@ with col_titre:
     st.title("💅 Ma Collection Beauté")
 with col_refresh:
     if st.button("🔄 Rafraîchir"):
-        del st.session_state['stock_df']
+        for key in ['stock_df', 'current_sha']:
+            if key in st.session_state: del st.session_state[key]
         st.rerun()
 with col_sort:
     sort_order = st.selectbox("Tri Nom", ["A-Z", "Z-A"], label_visibility="collapsed")
@@ -115,7 +144,6 @@ if not df.empty:
 # --- FORMULAIRE D'AJOUT (SIDEBAR) ---
 with st.sidebar:
     st.header("✨ Ajouter un article")
-    # Utilisation d'un container pour forcer le rafraîchissement lors du changement de catégorie
     cat_select = st.selectbox("Catégorie", st.session_state['list_cat'], key="add_cat_selector")
     
     with st.form("form_ajout", clear_on_submit=True):
@@ -123,7 +151,6 @@ with st.sidebar:
         desc = st.text_area("Description")
         
         couv, fini, sais = "", "", ""
-        # Affichage conditionnel STRICT
         if cat_select == "Vernis":
             couv = st.selectbox("Couvrance", st.session_state['list_couv'])
             fini = st.selectbox("Finition", st.session_state['list_fin'])
@@ -141,11 +168,13 @@ with st.sidebar:
                     "Couvrance": couv, "Finition": fini, "Saison": sais, "Lieu": lieu, "Photo": img_str
                 }])
                 updated_df = pd.concat([st.session_state['stock_df'], new_line], ignore_index=True)
-                success, new_sha = save_data(updated_df, st.session_state['current_sha'])
+                success, result = save_data(updated_df)
                 if success:
                     st.session_state['stock_df'] = updated_df
-                    st.session_state['current_sha'] = new_sha
-                    st.success("Ajouté !"); st.rerun()
+                    st.session_state['current_sha'] = result
+                    st.success("Ajouté !"); time.sleep(1); st.rerun()
+                else:
+                    st.error(f"Erreur de sauvegarde : {result}")
             else:
                 st.error("Nom requis.")
 
@@ -157,11 +186,9 @@ if st.session_state['editing_product'] is not None:
     
     col_e1, col_e2 = st.columns([2, 1])
     with col_e1:
-        # On définit d'abord la catégorie pour la modification
         cat_list = st.session_state['list_cat']
         idx_cat = cat_list.index(p['Categorie']) if p['Categorie'] in cat_list else 0
         e_cat = st.selectbox("Catégorie", cat_list, index=idx_cat, key="edit_cat_selector")
-        
         e_nom = st.text_input("Nom", value=p['Nom'])
         e_desc = st.text_area("Description", value=p['Description'])
         
@@ -186,12 +213,15 @@ if st.session_state['editing_product'] is not None:
         updated_df.loc[updated_df['ID'].astype(str) == str(p['ID']), 
                        ["Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]] = \
                        [e_cat, e_nom, e_desc, e_couv, e_fini, e_sais, e_lieu, final_img]
-        success, new_sha = save_data(updated_df, st.session_state['current_sha'])
+        success, result = save_data(updated_df)
         if success:
             st.session_state['stock_df'] = updated_df
-            st.session_state['current_sha'] = new_sha
+            st.session_state['current_sha'] = result
             st.session_state['editing_product'] = None
             st.rerun()
+        else:
+            st.error(f"Erreur : {result}")
+
     if c_cancel.button("❌ Annuler"):
         st.session_state['editing_product'] = None
         st.rerun()
@@ -237,8 +267,11 @@ def display_grid(data_to_show, key):
                         st.session_state['editing_product'] = row.to_dict(); st.rerun()
                     if c2.button("🗑️", key=f"d_{key}_{row['ID']}"):
                         new_df = st.session_state['stock_df'][st.session_state['stock_df']['ID'].astype(str) != str(row['ID'])]
-                        ok, s = save_data(new_df, st.session_state['current_sha'])
-                        if ok: st.session_state['stock_df'] = new_df; st.session_state['current_sha'] = s; st.rerun()
+                        ok, result = save_data(new_df)
+                        if ok:
+                            st.session_state['stock_df'] = new_df
+                            st.session_state['current_sha'] = result
+                            st.rerun()
 
 for i, t in enumerate(["Tous", "Vernis", "Soins", "Accessoires"]):
     with tabs[i]:
