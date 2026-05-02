@@ -36,6 +36,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- FONCTIONS GITHUB ---
+# Modifiez la fonction get_github_file comme ceci pour voir le bug :
 def get_github_file(path):
     url = f"https://api.github.com/repos/{REPO}/contents/{path}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
@@ -44,8 +45,12 @@ def get_github_file(path):
         if res.status_code == 200:
             content = base64.b64decode(res.json()["content"]).decode("utf-8")
             return content, res.json()["sha"]
-        return None, None
-    except:
+        else:
+            # Cette ligne affichera la raison précise du refus de GitHub
+            st.error(f"GitHub Error: {res.status_code} - {res.json().get('message')}")
+            return None, None
+    except Exception as e:
+        st.error(f"Erreur technique : {e}")
         return None, None
 
 def get_data():
