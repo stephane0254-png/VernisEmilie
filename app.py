@@ -76,7 +76,6 @@ if 'stock_df' not in st.session_state:
         content, sha = get_github_file_large(FILE_PATH)
         cols = ["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]
         
-        # Initialisation du DataFrame
         if content:
             try:
                 temp_df = pd.read_csv(StringIO(content), low_memory=False)
@@ -93,12 +92,27 @@ if 'stock_df' not in st.session_state:
             st.session_state['stock_df'] = pd.DataFrame(columns=cols)
             st.session_state['current_sha'] = None
 
-        # Initialisation des listes (Valeurs par défaut si échec)
-        st.session_state['list_cat'] = load_list("categorie.csv", ["Vernis", "Soins", "Accessoires"])
-        st.session_state['list_couv'] = load_list("couvrance.csv", ["Opaque", "Transparent"])
-        st.session_state['list_fin'] = load_list("finition.csv", ["Laqué", "Mat", "Irisé"])
-        st.session_state['list_sai'] = load_list("saison.csv", ["Toutes", "Printemps", "Été", "Automne", "Hiver"])
-        st.session_state['list_lieu'] = load_list("lieu.csv", ["Tiroir 1"])
+        # --- FIX POUR LES LISTES DÉROULANTES ---
+        # On définit les valeurs par défaut AVANT de tenter le chargement GitHub
+        default_cats = ["Vernis", "Soins", "Accessoires"]
+        default_couv = ["Opaque", "Semi-opaque", "Transparent"]
+        default_fin = ["Laqué", "Mat", "Irisé", "Pailleté", "Holo"]
+        default_sai = ["Toutes", "Printemps", "Été", "Automne", "Hiver"]
+        default_lieu = ["Tiroir 1", "Tiroir 2", "Étagère", "Sac à main"]
+
+        # Tentative de chargement depuis GitHub, sinon garde le défaut
+        st.session_state['list_cat'] = load_list("categorie.csv", default_cats)
+        st.session_state['list_couv'] = load_list("couvrance.csv", default_couv)
+        st.session_state['list_fin'] = load_list("finition.csv", default_fin)
+        st.session_state['list_sai'] = load_list("saison.csv", default_sai)
+        st.session_state['list_lieu'] = load_list("lieu.csv", default_lieu)
+
+        # Double vérification : si après le chargement une liste est vide, on force le défaut
+        if not st.session_state['list_cat']: st.session_state['list_cat'] = default_cats
+        if not st.session_state['list_couv']: st.session_state['list_couv'] = default_couv
+        if not st.session_state['list_fin']: st.session_state['list_fin'] = default_fin
+        if not st.session_state['list_sai']: st.session_state['list_sai'] = default_sai
+        if not st.session_state['list_lieu']: st.session_state['list_lieu'] = default_lieu
 
 # --- DÉFINITION DE DF (POUR ÉVITER NAMEERROR) ---
 df = st.session_state.get('stock_df', pd.DataFrame(columns=["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]))
