@@ -98,19 +98,28 @@ def save_data(df, sha):
 # --- CHARGEMENT INITIAL ---
 if 'stock_df' not in st.session_state:
     with st.spinner("Chargement de la base de données..."):
+        # 1. Charger les données principales
         loaded_df, loaded_sha, err = get_data()
+        
         if err:
-            st.error(err)
-            st.stop()
-        st.session_state['stock_df'] = loaded_df
-        st.session_state['current_sha'] = loaded_sha
-        st.session_state['list_cat'] = load_list("categorie.csv", ["Vernis", "Soins", "Accessoires"])
-        st.session_state['list_couv'] = load_list("couvrance.csv", ["Opaque", "Transparent"])
-        st.session_state['list_fin'] = load_list("finition.csv", ["Laqué", "Mat", "Irisé"])
-        st.session_state['list_sai'] = load_list("saison.csv", ["Toutes", "Été", "Hiver"])
-        st.session_state['list_lieu'] = load_list("lieu.csv", ["Tiroir 1"])
+            st.error(f"Erreur lors du chargement : {err}")
+            # On crée un DF vide pour éviter que l'app ne crash totalement
+            st.session_state['stock_df'] = pd.DataFrame(columns=["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"])
+            st.session_state['current_sha'] = None
+        else:
+            st.session_state['stock_df'] = loaded_df
+            st.session_state['current_sha'] = loaded_sha
 
-df = st.session_state['stock_df']
+        # 2. Charger les listes avec des valeurs par défaut de sécurité (évite le KeyError)
+        st.session_state['list_cat'] = load_list("categorie.csv", ["Vernis", "Soins", "Accessoires"])
+        st.session_state['list_couv'] = load_list("couvrance.csv", ["Opaque", "Semi-opaque", "Transparent"])
+        st.session_state['list_fin'] = load_list("finition.csv", ["Laqué", "Mat", "Irisé", "Pailleté", "Holo"])
+        st.session_state['list_sai'] = load_list("saison.csv", ["Toutes", "Printemps", "Été", "Automne", "Hiver"])
+        st.session_state['list_lieu'] = load_list("lieu.csv", ["Tiroir 1", "Tiroir 2", "Étagère"])
+
+# Vérification de sécurité finale
+if 'list_cat' not in st.session_state:
+    st.session_state['list_cat'] = ["Vernis", "Soins", "Accessoires"]
 
 # --- INTERFACE PRINCIPALE ---
 col_titre, col_refresh, col_sort = st.columns([4, 1, 1])
