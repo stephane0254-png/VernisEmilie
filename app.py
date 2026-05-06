@@ -167,39 +167,59 @@ with st.sidebar:
 if st.session_state['editing_product'] is not None:
     p = st.session_state['editing_product']
     st.markdown('<div class="edit-container">', unsafe_allow_html=True)
-    st.subheader(f"📝 Modifier : {p['Nom']}")
+    st.subheader(f"📝 Modifier : {p.get('Nom', 'Produit')}")
     col_e1, col_e2 = st.columns([2, 1])
+    
     with col_e1:
-        e_cat = st.selectbox("Catégorie", cats, index=cats.index(p['Categorie']) if p['Categorie'] in cats else 0)
-        e_nom = st.text_input("Nom", value=p['Nom'])
-        e_desc = st.text_area("Description", value=p['Description'])
+        e_cat = st.selectbox("Catégorie", cats, index=cats.index(p['Categorie']) if p.get('Categorie') in cats else 0)
+        e_nom = st.text_input("Nom", value=p.get('Nom', ''))
+        e_desc = st.text_area("Description", value=p.get('Description', ''))
         e_couv, e_fini, e_sais = "", "", ""
         if e_cat == "Vernis":
             c_l, f_l, s_l = st.session_state.get('list_couv', []), st.session_state.get('list_fin', []), st.session_state.get('list_sai', [])
-            e_couv = st.selectbox("Couvrance", c_l, index=c_l.index(p['Couvrance']) if p['Couvrance'] in c_l else 0)
-            e_fini = st.selectbox("Finition", f_l, index=f_l.index(p['Finition']) if p['Finition'] in f_l else 0)
-            e_sais = st.selectbox("Saison", s_l, index=s_l.index(p['Saison']) if p['Saison'] in s_l else 0)
+            e_couv = st.selectbox("Couvrance", c_l, index=c_l.index(p['Couvrance']) if p.get('Couvrance') in c_l else 0)
+            e_fini = st.selectbox("Finition", f_l, index=f_l.index(p['Finition']) if p.get('Finition') in f_l else 0)
+            e_sais = st.selectbox("Saison", s_l, index=s_l.index(p['Saison']) if p.get('Saison') in s_l else 0)
         l_l = st.session_state.get('list_lieu', [])
-        e_lieu = st.selectbox("Lieu", l_l, index=l_l.index(p['Lieu']) if p['Lieu'] in l_l else 0)
+        e_lieu = st.selectbox("Lieu", l_l, index=l_l.index(p['Lieu']) if p.get('Lieu') in l_l else 0)
+    
     with col_e2:
         e_file = st.file_uploader("Changer photo", type=["jpg", "jpeg", "png"])
-        if not e_file and p.get('Photo'): st.image(base64.b64decode(p['Photo']), width=150)
-    
-    if st.button("✅ Enregistrer"):
-        updated_df = st.session_state['stock_df'].copy()
-        final_img = base64.b64encode(e_file.read()).decode() if e_file else p['Photo']
-        updated_df.loc[updated_df['ID'].astype(str) == str(p['ID']), 
-                       ["Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]] = \
-                       [e_cat, e_nom, e_desc, e_couv, e_fini, e_sais, e_lieu, final_img]
-        ok, s = save_data(updated_df, st.session_state['current_sha'])
-        if ok:
-            st.session_state['stock_df'] = updated_df
-            st.session_state['current_sha'] = s
+        # CORRECTION ICI : Vérification robuste de la photo existante
+        photo_data = p.get('Photo', "")
+        if not e_file and isinstance(photo_data, str) and len(photo_data) > 10:
+            try:
+                st.image(base64.b64decode(photo_data), width=150)
+            except:
+                st.warning("Impossible d'afficher l'aperçu de l'ancienne photo.")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("✅ Enregistrer les modifications", use_container_width=True):
+            updated_df = st.session_state['stock_df'].copy()
+            # On garde l'ancienne photo si aucune nouvelle n'est chargée
+            final_img = base64.b64encode(e_file.read()).decode() if e_file else p.get('Photo', "")
+            
+            # Mise à jour dans le DataFrame
+            mask = updated_df['ID'].astype(str) == str(p['ID'])
+            updated_df.loc[mask, ["Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]] = \
+                [e_cat, e_nom, e_desc, e_couv, e_fini, e_sais, e_lieu, final_img]
+            
+            ok, s = save_data(updated_df, st.session_state['current_sha'])
+            if ok:
+                st.session_state['stock_df'] = updated_df
+                st.session_state['current_sha'] = s
+                st.session_state['editing_product'] = None
+                st.success("Modifications enregistrées !")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Erreur lors de la sauvegarde sur GitHub.")
+                
+    with col_btn2:
+        if st.button("❌ Annuler", use_container_width=True):
             st.session_state['editing_product'] = None
             st.rerun()
-    if st.button("❌ Annuler"):
-        st.session_state['editing_product'] = None
-        st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- ZONE DE ZOOM ---
