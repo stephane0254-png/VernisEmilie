@@ -17,102 +17,55 @@ FILE_PATH = "data.csv"
 
 st.set_page_config(page_title="Beauty Stock", page_icon="💅", layout="wide")
 
-# --- FONCTIONS GITHUB (VERSION OPTIMISÉE) ---
-def get_github_file(path):
-    url = f"https://api.github.com/repos/{REPO}/contents/{path}"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+# --- FONCTIONS GITHUB (VERSION HAUTE CAPACITÉ) ---
+def get_github_file_large(path):
+    # 1. Récupérer le SHA du fichier via l'API standard
+    url_info = f"https://api.github.com/repos/{REPO}/contents/{path}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    
     try:
-        # Augmentation du timeout pour les gros fichiers
-        res = requests.get(url, headers=headers, timeout=30)
-        if res.status_code == 200:
-            json_data = res.json()
-            content = base64.b64decode(json_data["content"]).decode("utf-8")
-            return content, json_data["sha"]
-        else:
-            return None, None
+        res_info = requests.get(url_info, headers=headers, timeout=20)
+        if res_info.status_code == 200:
+            file_sha = res_info.json()["sha"]
+            
+            # 2. Utiliser l'API BLOB pour télécharger le contenu lourd
+            url_blob = f"https://api.github.com/repos/{REPO}/git/blobs/{file_sha}"
+            res_blob = requests.get(url_blob, headers=headers, timeout=60)
+            
+            if res_blob.status_code == 200:
+                content = base64.b64decode(res_blob.json()["content"]).decode("utf-8")
+                return content, file_sha
+        return None, None
     except Exception as e:
-        st.warning(f"Détail technique : {e}")
+        st.error(f"Erreur technique : {e}")
         return None, None
 
 def get_data():
-    content, sha = get_github_file(FILE_PATH)
+    content, sha = get_github_file_large(FILE_PATH)
     cols = ["ID", "Categorie", "Nom", "Description", "Couvrance", "Finition", "Saison", "Lieu", "Photo"]
     if content:
-        if not content.strip() or len(content.strip().split('\n')) <= 1:
-            return pd.DataFrame(columns=cols), sha, None
         try:
-            # Lecture optimisée
-            df_load = pd.read_csv(StringIO(content), sep=',', skipinitialspace=True, low_memory=False)
+            df_load = pd.read_csv(StringIO(content), low_memory=False)
             df_load.columns = df_load.columns.str.strip()
             for c in cols:
                 if c not in df_load.columns: df_load[c] = ""
             df_load["ID"] = df_load["ID"].astype(str)
             return df_load, sha, None
         except Exception as e:
-            return pd.DataFrame(columns=cols), sha, f"Erreur de lecture CSV : {e}"
-    return None, None, "Erreur de connexion GitHub (Fichier trop lourd ou Token expiré)"
-
-# --- LE RESTE DU CODE RESTE IDENTIQUE ---
-def load_list(filename, default_values):
-    content, _ = get_github_file(filename)
-    if content:
-        try:
-            df_list = pd.read_csv(StringIO(content))
-            return df_list.iloc[:, 0].dropna().unique().tolist()
-        except:
-            return default_values
-    return default_values
-
-def save_data(df):
-    """Sauvegarde sécurisée avec vérification anti-vidage"""
-    # 1. Sécurité : On refuse de sauvegarder si le DataFrame est vide (sauf si c'est volontaire, mais ici on protège)
-    if df is None or (not isinstance(df, pd.DataFrame)):
-        return False, "Erreur technique : données invalides."
-    
-    # 2. Récupérer le SHA le plus récent juste avant l'écriture pour éviter les conflits
-    _, latest_sha = get_github_file(FILE_PATH)
-    if not latest_sha:
-        return False, "Impossible de récupérer la version actuelle sur GitHub."
-
-    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    
-    # Génération du CSV
-    csv_content = df.to_csv(index=False, lineterminator='\n', encoding='utf-8')
-    
-    # 3. Sécurité supplémentaire : Si le contenu généré est trop court (ex: juste l'entête alors qu'il y avait des données)
-    # on peut ajouter une alerte, mais ici on s'assure au moins que l'encodage est correct.
-    encoded = base64.b64encode(csv_content.encode("utf-8")).decode("utf-8")
-    
-    payload = {
-        "message": f"Mise à jour stock {time.strftime('%Y-%m-%d %H:%M:%S')}",
-        "content": encoded,
-        "sha": latest_sha
-    }
-    
-    res = requests.put(url, json=payload, headers=headers)
-    if res.status_code in [200, 201]:
-        return True, res.json()["content"]["sha"]
-    else:
-        return False, res.json().get("message", "Erreur lors de l'envoi")
+            return None, sha, f"Erreur d'analyse : {e}"
+    return None, None, "Fichier inaccessible (trop volumineux ou token invalide)"
 
 # --- CHARGEMENT INITIAL ---
 if 'stock_df' not in st.session_state:
-    with st.spinner("Initialisation..."):
+    with st.spinner("Chargement de la base de données volumineuse..."):
         loaded_df, loaded_sha, err = get_data()
-        if err: st.error(err); st.stop()
+        if err: 
+            st.error(err)
+            st.info("💡 Si le fichier est trop lourd, essayez de le nettoyer manuellement sur GitHub.")
+            st.stop()
         st.session_state['stock_df'] = loaded_df
         st.session_state['current_sha'] = loaded_sha
-        st.session_state['list_cat'] = load_list("categorie.csv", ["Vernis", "Soins", "Accessoires"])
-        st.session_state['list_couv'] = load_list("couvrance.csv", [])
-        st.session_state['list_fin'] = load_list("finition.csv", [])
-        st.session_state['list_sai'] = load_list("saison.csv", [])
-        st.session_state['list_lieu'] = load_list("lieu.csv", [])
 
-df = st.session_state['stock_df']
 
 # --- INTERFACE ---
 col_titre, col_refresh, col_sort = st.columns([4, 1, 1])
